@@ -1,0 +1,30 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const app={innerHTML:'',querySelectorAll:()=>[]};
+let saved=null;
+const ctx=vm.createContext({console,assert,document:{querySelector:()=>app,querySelectorAll:()=>[]},localStorage:{getItem:()=>saved,setItem:(k,v)=>saved=v}});
+for(const f of ['cards.js','engine.js','app.js'])vm.runInContext(fs.readFileSync('dist/'+f,'utf8'),ctx);
+vm.runInContext(`(async()=>{
+assert.equal(S.phase,'setup');assert.equal(S.deck.length,44);assert.equal(S.market.length,0);
+assert.equal(S.setupHands[0].length,4);assert.equal(S.setupHands[1].length,4);
+assert(document.querySelector('#app').innerHTML.includes('Your starting hand'));
+const original=JSON.stringify(S), first=S.setupHands[0][0], step=cost(first,0);
+await slide();assert.equal(JSON.stringify(S),original);
+setupPlay(S.setupHands[1][0]);assert.equal(JSON.stringify(S),original);
+selectMarket(first);assert(document.querySelector('#app').innerHTML.includes('Play on timer'));
+await run(async()=>setupPlay(first));assert.equal(waiting(0).length,1);assert.equal(S.setupPlayed,1);
+assert(S.players[0].timer[step-1].cards.some(c=>c.id===first));
+const afterOne=JSON.stringify(S);setupPlay(first);assert.equal(JSON.stringify(S),afterOne);
+S=JSON.parse(localStorage.getItem('light-echoes-v1')).S;assert.equal(JSON.stringify(S),afterOne);
+undo();assert.equal(JSON.stringify(S),original);
+await run(async()=>setupPlay(first));
+const rejected=S.setupHands[0].slice(1);
+await run(async()=>setupPlay(S.setupHands[0][0]));assert.equal(S.p,1);assert.equal(S.phase,'setup');assert.equal(S.discard.length,2);
+assert(rejected.every(id=>S.discard.includes(id)));
+await run(async()=>setupPlay(S.setupHands[1][0]));await run(async()=>setupPlay(S.setupHands[1][0]));
+assert.equal(S.p,0);assert.equal(S.phase,'slide');assert.equal(S.turn,1);assert.equal(S.market.length,5);assert.equal(S.deck.length,39);
+assert.equal(S.discard.length,4);assert.equal(waiting(0).length,2);assert.equal(waiting(1).length,2);assert.equal(S.board.length,0);
+const all=[...S.deck,...S.market,...S.discard,...waiting(0).map(c=>c.id),...waiting(1).map(c=>c.id)];assert.equal(all.length,52);assert.equal(new Set(all).size,52);
+undo();assert.equal(S.phase,'setup');assert.equal(S.p,1);assert.equal(S.setupPlayed,1);assert.equal(S.market.length,0);
+console.log('PASS: setup UI, 4 cards per player, legal selections, costs, auto discard, first turn, deck conservation, save/resume, undo across setup completion.');
+})()`,ctx).catch(e=>{console.error(e);process.exitCode=1});
+
